@@ -1,0 +1,46 @@
+services:
+  database:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: demo
+      POSTGRES_PASSWORD: demo
+      POSTGRES_DB: asksql
+    ports: ["127.0.0.1:54835:5432"]
+    volumes: ["database:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U demo -d asksql"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  analytics:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: analytics_owner
+      POSTGRES_PASSWORD: demo-owner
+      POSTGRES_DB: analytics
+    ports: ["127.0.0.1:54935:5432"]
+    volumes:
+      - analytics:/var/lib/postgresql/data
+      - ./sql/analytics.sql:/docker-entrypoint-initdb.d/analytics.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U analytics_owner -d analytics"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  api:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://demo:demo@database/asksql
+      ANALYTICS_A_URL: postgresql://report_a:demo-a@analytics/analytics
+      ANALYTICS_B_URL: postgresql://report_b:demo-b@analytics/analytics
+      CLIENT_KEYS: '{"demo-a-key":"a","demo-b-key":"b"}'
+      MODEL_MODE: demo
+      OLLAMA_URL: http://host.docker.internal:11434
+      OLLAMA_MODEL: qwen2.5-coder:7b
+    ports: ["127.0.0.1:8095:8000"]
+    depends_on:
+      database: {condition: service_healthy}
+      analytics: {condition: service_healthy}
+volumes:
+  database:
+  analytics:
