@@ -34,13 +34,19 @@ services:
       ANALYTICS_A_URL: postgresql://report_a:demo-a@analytics/analytics
       ANALYTICS_B_URL: postgresql://report_b:demo-b@analytics/analytics
       CLIENT_KEYS: '{"demo-a-key":"a","demo-b-key":"b"}'
-      MODEL_MODE: demo
-      OLLAMA_URL: http://host.docker.internal:11434
-      OLLAMA_MODEL: qwen2.5-coder:7b
+      MODEL_MODE: ${MODEL_MODE:-demo}
+      OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen2.5-coder:1.5b}
     ports: ["127.0.0.1:8095:8000"]
     depends_on:
       database: {condition: service_healthy}
       analytics: {condition: service_healthy}
+  ollama:
+    image: ollama/ollama@sha256:8262851b2846b87c649eddf3e76beb270c52f4d1bc94559f47efde16b0841551
+    profiles: [llm]
+    ports: ["127.0.0.1:11435:11434"]
+    volumes: ["models:/root/.ollama"]
 volumes:
+  models:
   database:
   analytics:

@@ -78,3 +78,70 @@ def test_query_budget_and_actual_query():
         ),
     )
     assert [row["product"] for row in rows] == ["coffee", "tea"]
+
+
+def test_idempotent_question_and_conflicting_payload(client, monkeypatch):
+    called = 0
+    original = api.generate
+
+    def generate(*args):
+        nonlocal called
+        called += 1
+        return original(*args)
+
+    monkeypatch.setattr(api, "generate", generate)
+    headers = {"Idempotency-Key": "question-1"}
+    first = client.post("/ask", json={"question": "общая выручка"}, headers=headers)
+    assert (
+        client.post("/ask", json={"question": "общая выручка"}, headers=headers).json()
+        == first.json()
+    )
+    assert called == 1
+    assert (
+        client.post("/ask", json={"question": "сколько продаж"}, headers=headers).status_code == 409
+    )
+
+
+def test_concurrency_budget_is_shared_through_database(client):
+    from asksql.db import connect
+
+    with connect() as conn:
+        conn.execute("SELECT pg_advisory_xact_lock(350100)")
+        assert client.post("/ask", json={"question": "общая выручка"}).status_code == 429
+        assert (
+            client.post(
+                "/ask", json={"question": "общая выручка"}, headers={"X-API-Key": "other-key"}
+            ).status_code
+            == 200
+        )
+    assert client.post("/ask", json={"question": "общая выручка"}).status_code == 200
+
+
+def test_context_preserves_clarification_but_not_result_rows(client, monkeypatch):
+    first = client.post("/ask", json={"question": "выручка"}).json()
+    second = client.post("/ask", json={"question": "общая", "parent": first["id"]}).json()
+    seen = []
+
+    def generated(question, previous):
+        seen.extend(previous)
+        return {"sql": None, "clarification": "Укажите период"}
+
+    monkeypatch.setattr(api, "generate", generated)
+    result = client.post("/ask", json={"question": "за какой период", "parent": second["id"]})
+    assert result.status_code == 200
+    assert len(seen) == 4
+    assert seen[0]["content"] == "выручка"
+    assert "450.00" not in str(seen)
+    assert any("clarification" in m["content"] for m in seen)
+
+
+def test_model_failure_releases_slot(client, monkeypatch):
+    from asksql.model import ModelFailure
+
+    def unavailable(*args):
+        raise ModelFailure("Сбой адаптера")
+
+    monkeypatch.setattr(api, "generate", unavailable)
+    assert client.post("/ask", json={"question": "общая выручка"}).status_code == 502
+    monkeypatch.setattr(api, "generate", lambda *args: {"sql": None, "clarification": "Уточните"})
+    assert client.post("/ask", json={"question": "общая выручка"}).status_code == 200

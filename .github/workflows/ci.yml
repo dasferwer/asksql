@@ -26,5 +26,20 @@ jobs:
           done
           uv run pytest -q
           uv run python -m scripts.evaluate
+      - name: Проверка настоящей локальной модели
+        env:
+          MODEL_MODE: ollama
+          OLLAMA_URL: http://ollama:11434
+          EVAL_OUTPUT: llm-evaluation.json
+        run: |
+          docker compose --profile llm up -d ollama
+          docker compose exec -T ollama ollama pull qwen2.5-coder:1.5b
+          docker compose up -d api
+          uv run python -m scripts.evaluate_llm
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: llm-evaluation
+          path: llm-evaluation.json
       - if: always()
-        run: docker compose down
+        run: docker compose --profile llm down

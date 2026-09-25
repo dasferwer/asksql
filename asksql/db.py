@@ -14,4 +14,8 @@ def init():
         conn.execute("""CREATE TABLE IF NOT EXISTS questions (
             id uuid PRIMARY KEY, owner text NOT NULL, question text NOT NULL,
             parent uuid REFERENCES questions(id), response jsonb NOT NULL,
-            created_at timestamptz NOT NULL DEFAULT now())""")
+            created_at timestamptz NOT NULL DEFAULT now());
+            CREATE TABLE IF NOT EXISTS requests (
+                owner text NOT NULL,key text NOT NULL,fingerprint text NOT NULL,
+                response jsonb NOT NULL,PRIMARY KEY(owner,key));
+        """)

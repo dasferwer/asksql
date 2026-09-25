@@ -2,6 +2,7 @@ import json
 import os
 
 import httpx
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 SYSTEM = """Ты формируешь ограниченный PostgreSQL SELECT для analytics.sales.
 Доступны day (date), product (text), region (text), amount (numeric).
@@ -13,25 +14,54 @@ SYSTEM = """Ты формируешь ограниченный PostgreSQL SELECT
 """
 
 
+class ModelFailure(RuntimeError):
+    pass
+
+
+class Answer(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    sql: str | None = Field(default=None, max_length=5000)
+    explanation: str = Field(default="", max_length=2000)
+    clarification: str | None = Field(default=None, max_length=2000)
+
+
+def call_model(messages):
+    try:
+        with httpx.stream(
+            "POST",
+            os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat",
+            json={
+                "model": os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:1.5b"),
+                "messages": messages,
+                "stream": False,
+                "format": Answer.model_json_schema(),
+                "options": {"temperature": 0, "num_predict": 512, "num_ctx": 4096},
+            },
+            timeout=90,
+        ) as response:
+            response.raise_for_status()
+            raw = bytearray()
+            for chunk in response.iter_bytes():
+                raw.extend(chunk)
+                if len(raw) > 65536:
+                    raise ModelFailure("Ответ модели превышает допустимый размер")
+        envelope = json.loads(raw)
+        return Answer.model_validate_json(envelope["message"]["content"]).model_dump()
+    except (httpx.HTTPError, ValueError, KeyError, TypeError, ValidationError) as exc:
+        raise ModelFailure("Модель недоступна или нарушила контракт ответа") from exc
+
+
 def generate(question, previous=None):
     if os.environ.get("MODEL_MODE", "demo") == "ollama":
         messages = [{"role": "system", "content": SYSTEM}]
-        if previous:
-            messages.append({"role": "user", "content": "Предыдущий вопрос: " + previous})
+        if isinstance(previous, list):
+            messages.extend(previous)
+        elif previous:
+            messages.append({"role": "user", "content": previous})
         messages.append({"role": "user", "content": question})
-        response = httpx.post(
-            os.environ.get("OLLAMA_URL", "http://localhost:11434") + "/api/chat",
-            json={
-                "model": os.environ.get("OLLAMA_MODEL", "qwen2.5-coder:7b"),
-                "messages": messages,
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0},
-            },
-            timeout=60,
-        )
-        response.raise_for_status()
-        return json.loads(response.json()["message"]["content"])
+        return call_model(messages)
+    if isinstance(previous, list):
+        previous = next((m["content"] for m in reversed(previous) if m["role"] == "user"), None)
     # Детерминированный режим проверяет весь контур без выдачи шаблонов за работу LLM.
     text = question.lower().strip().rstrip("?!.")
     if text == "выручка":
