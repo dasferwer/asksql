@@ -44,6 +44,11 @@ services:
   ollama:
     image: ollama/ollama@sha256:8262851b2846b87c649eddf3e76beb270c52f4d1bc94559f47efde16b0841551
     profiles: [llm]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
     ports: ["127.0.0.1:11435:11434"]
     volumes: ["models:/root/.ollama"]
 volumes:

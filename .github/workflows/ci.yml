@@ -32,7 +32,7 @@ jobs:
           OLLAMA_URL: http://ollama:11434
           EVAL_OUTPUT: llm-evaluation.json
         run: |
-          docker compose --profile llm up -d ollama
+          docker compose --profile llm up -d --wait --wait-timeout 90 ollama
           docker compose exec -T ollama ollama pull qwen2.5-coder:1.5b
           docker compose up -d api
           uv run python -m scripts.evaluate_llm

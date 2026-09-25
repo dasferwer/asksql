@@ -88,7 +88,7 @@ uv run python -m scripts.evaluate
 Для запуска LLM нужны свободная память и место для образа Ollama и модели:
 
 ```sh
-docker compose --profile llm up -d ollama
+docker compose --profile llm up -d --wait --wait-timeout 90 ollama
 docker compose exec -T ollama ollama pull qwen2.5-coder:1.5b
 MODEL_MODE=ollama OLLAMA_URL=http://ollama:11434 docker compose up -d api
 EVAL_OUTPUT=llm-evaluation.json uv run python -m scripts.evaluate_llm
