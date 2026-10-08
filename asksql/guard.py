@@ -41,7 +41,7 @@ def validate(sql):
         raise ValueError("SQL превышает 5000 символов")
     try:
         statements = sqlglot.parse(sql, read="postgres")
-    except sqlglot.errors.ParseError as exc:
+    except (sqlglot.errors.ParseError, sqlglot.errors.TokenError) as exc:
         raise ValueError("SQL не удалось разобрать") from exc
     if len(statements) != 1 or not isinstance(statements[0], exp.Select):
         raise ValueError("Разрешён один SELECT")
